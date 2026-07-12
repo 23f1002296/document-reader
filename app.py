@@ -45,40 +45,29 @@ async def root():
 async def erp_extract(req: ERPRequest):
 
     prompt = f"""
-You are an expert invoice extraction system.
+You are an expert information extraction system.
 
-Extract the invoice information from the text.
+Extract information EXACTLY as written.
 
-IMPORTANT RULES
-
+Rules:
+- Copy vendor names exactly.
+- Copy email addresses exactly, character for character.
+- Copy SKU values exactly.
+- Never correct spelling.
+- Never normalize vendor names.
+- Never infer missing characters.
 - Return ONLY valid JSON.
-- Return EXACTLY the fields described by the supplied JSON Schema.
-- No markdown.
-- No explanation.
-- No extra keys.
-- No missing keys.
-- Use null if a value cannot be determined.
+- Follow the provided JSON schema exactly.
 
-Extraction rules:
+For identifiers (emails, SKUs, invoice numbers):
 
-- vendor: preserve exactly as written.
-- currency: ISO 4217 code (USD, EUR, GBP, INR, JPY).
-- total_amount: integer in the major currency unit.
-- invoice_date: YYYY-MM-DD.
-- due_in_days: integer.
-- is_paid: boolean.
-- priority: low, normal, high, or urgent.
-- contact_email: lowercase.
-- line_items: preserve order.
-- item_count: number of line_items.
+Copy them character-for-character from the source text.
 
-JSON Schema:
+Do NOT autocorrect.
 
-{json.dumps(req.schema_, indent=2)}
+Do NOT infer.
 
-Invoice text:
-
-{req.text}
+Do NOT rewrite.
 """
 
     try:
