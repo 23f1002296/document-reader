@@ -1,5 +1,6 @@
 import json
 import os
+import re
 from typing import Any
 
 from dotenv import load_dotenv
@@ -36,6 +37,11 @@ class ERPRequest(BaseModel):
     }
 
 
+EMAIL_RE = re.compile(
+    r"[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}"
+)
+
+
 @app.get("/")
 async def root():
     return {"status": "ok"}
@@ -45,29 +51,37 @@ async def root():
 async def erp_extract(req: ERPRequest):
 
     prompt = f"""
-You are an expert information extraction system.
+You are an expert invoice extraction system.
 
-Extract information EXACTLY as written.
+Extract structured information from the invoice text.
 
-Rules:
-- Copy vendor names exactly.
-- Copy email addresses exactly, character for character.
-- Copy SKU values exactly.
-- Never correct spelling.
-- Never normalize vendor names.
-- Never infer missing characters.
+IMPORTANT:
 - Return ONLY valid JSON.
-- Follow the provided JSON schema exactly.
+- Follow the supplied JSON Schema EXACTLY.
+- Do NOT add extra fields.
+- Do NOT omit fields.
+- If a value cannot be determined, return null.
 
-For identifiers (emails, SKUs, invoice numbers):
+Extraction Rules:
 
-Copy them character-for-character from the source text.
+- vendor: copy exactly as written.
+- currency: return ISO 4217 code (USD, EUR, GBP, INR, JPY).
+- total_amount: integer in the main currency unit.
+- invoice_date: YYYY-MM-DD.
+- due_in_days: integer.
+- is_paid: boolean.
+- priority: one of low, normal, high, urgent.
+- contact_email: copy EXACTLY from the invoice text and lowercase it.
+- line_items: preserve their order.
+- item_count: number of line_items.
 
-Do NOT autocorrect.
+JSON Schema:
 
-Do NOT infer.
+{json.dumps(req.schema_, indent=2)}
 
-Do NOT rewrite.
+Invoice Text:
+
+{req.text}
 """
 
     try:
@@ -85,17 +99,16 @@ Do NOT rewrite.
             messages=[
                 {
                     "role": "system",
-                    "content": "You extract invoices into structured JSON.",
+                    "content": "You extract invoices into structured JSON."
                 },
                 {
                     "role": "user",
-                    "content": prompt,
-                },
-            ],
+                    "content": prompt
+                }
+            ]
         )
 
     except Exception:
-        # Fallback for providers that don't support json_schema
         response = client.chat.completions.create(
             model="gpt-4.1-mini",
             temperature=0,
@@ -103,21 +116,25 @@ Do NOT rewrite.
             messages=[
                 {
                     "role": "system",
-                    "content": "Return ONLY valid JSON.",
+                    "content": "Return ONLY valid JSON that exactly matches the supplied schema."
                 },
                 {
                     "role": "user",
-                    "content": prompt,
-                },
-            ],
+                    "content": prompt
+                }
+            ]
         )
 
     data = json.loads(response.choices[0].message.content)
 
-    # Return exactly the keys in the supplied schema
-    properties = req.schema_.get("properties", {})
+    # Override email using regex from original text
+    match = EMAIL_RE.search(req.text)
+    if match:
+        data["contact_email"] = match.group(0).lower()
 
+    # Return exactly the schema keys
     result = {}
+    properties = req.schema_.get("properties", {})
 
     for key in properties:
         result[key] = data.get(key, None)
